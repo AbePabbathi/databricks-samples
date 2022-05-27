@@ -5,12 +5,11 @@
 # MAGIC 
 # MAGIC #### Scope
 # MAGIC This notebook analyzes Delta lake tables stored in a database.
-# MAGIC It scans the tables and dbfs file system to gather important statistics to help you find ways to improve the performance of Delta lake tables
+# MAGIC It scans the tables and gathers important statistics to help you find tables you need to dig in further
 # MAGIC 
 # MAGIC Here are the steps we execute
 # MAGIC * Read database name entered by user at the top of the notebook
 # MAGIC * Gather table stats in using "describe detail" on each table in the database
-# MAGIC * Gather file level details using the location of each table
 # MAGIC * Persist the metadata to delta tables in a database called 'dataops'
 # MAGIC * Summarize the findings
 # MAGIC 
@@ -18,12 +17,7 @@
 # MAGIC These statistics are captured at table level:
 # MAGIC - Table Size in GB
 # MAGIC - Avg. File Size
-# MAGIC 
-# MAGIC #### DBFS File Statistics
-# MAGIC These statistics are captured at dbfs file level:
-# MAGIC - Table Size including all versions
-# MAGIC - Avg. File Size
-# MAGIC - Partition Skew
+# MAGIC - Partition Columns
 # MAGIC 
 # MAGIC #### Instructions
 # MAGIC 

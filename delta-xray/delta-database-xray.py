@@ -63,31 +63,36 @@ from pyspark.sql.functions import *
 # COMMAND ----------
 
 # Function to go through each table in the database and gather the statistics
-def get_tbls_dets(dbname):
-  tbl_list = []
-  # Limit analysis to one database
-  dbselected = spark.sql("use "+dbname)
-  tbls = spark.sql("show tables")
-  # Get a list of all the tables
-  tbls = tbls.select("database","tableName").filter("database <>''")
-  tbl_list.extend(tbls.rdd.collect())
-  tbl_details = []
-  # Iterate through each table and get details
-  if len(tbl_list)>0:
-      for tbl in tbl_list:
-        try:
-          # Describe each table to get details
-          tblDetails = spark.sql("describe detail "+tbl.database+"."+tbl.tableName)
-          tblDetails=tblDetails.withColumn("dbname",lit(tbl.database))
-          tbl_details.extend(tblDetails.rdd.collect())
-        except Exception as e:
-          pass
-  # Return the list of tables with details
-  return tbl_details
+tbl_list = []
+# Limit analysis to one database
+dbselected = spark.sql("use "+dbName)
+tbls = spark.sql("show tables")
+# Get a list of all the tables
+tbls = tbls.select("database","tableName").filter("database <>''")
+tbl_list.extend(tbls.rdd.collect())
+tbl_details = []
 
 # COMMAND ----------
 
-tables = get_tbls_dets(dbName)
+# Iterate through each table and get details
+while len(tbl_list)>0:
+  try:
+    # Describe each table to get details
+    tableName = tbl_list.pop()[1]
+    print("Processing table: "+tableName)
+    tblDetails = spark.sql("describe detail "+dbName+"."+tableName )
+  except Exception as e:
+    pass
+                           
+  tblDetails=tblDetails.withColumn("dbname",lit(dbName))
+  tbl_details.extend(tblDetails.rdd.collect())
+
+
+# COMMAND ----------
+
+len(tbl_details)
+
+# COMMAND ----------
 
 tSchema = StructType([StructField("format", StringType())\
                       ,StructField("id", StringType())\
@@ -103,8 +108,8 @@ tSchema = StructType([StructField("format", StringType())\
                       ,StructField("minReaderVersion", StringType())\
                       ,StructField("minWriterVersion", StringType())\
                       ,StructField("dbname", StringType())])
-if len(tables)>0:
-  tbldetDF = spark.createDataFrame(tables,schema=tSchema)
+if len(tbl_details)>0:
+  tbldetDF = spark.createDataFrame(tbl_details,schema=tSchema)
 else :
   tbldetDF = spark.createDataFrame(spark.sparkContext.emptyRDD(), tSchema)
 
@@ -131,75 +136,8 @@ tbldetDF.createOrReplaceTempView("tables_tmp")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ##### 3. Get DBFS File Statistics
-
-# COMMAND ----------
-
-# Function to walk through the directory structure to gather file stats
-def analyzeDir(parentDir,dbfsPath):
-  fileList = []
-  badDirList = []
-  try:
-    sourceFiles = dbutils.fs.ls(parentDir)
-  except:
-    badDirList.append(subDir)
-
-  #Get list of files which have some data in them
-  while len(sourceFiles)>0:
-    fileDetails = sourceFiles.pop()
-    if fileDetails.size>0:
-      fileDetailsList = list(fileDetails)
-      fileDetailsList.append(dbfsPath)
-      fileList.append(fileDetailsList)
-    else:
-      try:
-        subDirFiles = dbutils.fs.ls(fileDetails.path)
-        sourceFiles.extend(subDirFiles)
-      except:
-        badDirList.append(fileDetails.path) 
-  return fileList
-
-# COMMAND ----------
-
-# Get all the locations of tables
-tableLocations = tbldetDF.select("location").collect()
-tableFiles = []
-
-# Walk through each table location and gather file stats
-while len(tableLocations)>0:
-  dbfsPath = tableLocations.pop()[0]
-  tablePath = dbfsPath.replace("dbfs:","")+"/"
-  fileList = analyzeDir(tablePath,dbfsPath)
-  tableFiles.extend(fileList)
-
-
-# COMMAND ----------
-
-# Create a temporary table out of the data collected
-tSchema = StructType([StructField("path", StringType())\
-                      ,StructField("name", StringType())\
-                      ,StructField("size", LongType())\
-                      ,StructField("modificationTime", LongType())\
-                      ,StructField("tablePath", StringType())
-                     ])
-if len(tableFiles)>0:
-  filesDF = spark.createDataFrame(tableFiles,schema=tSchema)
-  filesDF.createOrReplaceTempView("files_tmp")
-else:
-  print("No files found")
-
-# COMMAND ----------
-
 # MAGIC %sql
-# MAGIC 
-# MAGIC create or replace temporary view file_stats
-# MAGIC as
-# MAGIC select tablePath,path,size,
-# MAGIC split(replace(path,tablePath,''),'/')[1] as subPath,
-# MAGIC case when substr(split(replace(path,tablePath,''),'/')[1],-7) = 'parquet' or split(replace(path,tablePath,''),'/')[1] = '_delta_log' then 0 else 1 end as partitionDir,
-# MAGIC case when split(replace(path,tablePath,''),'/')[1] = '_delta_log' then 1 else 0 end as deltaLogDir
-# MAGIC from files_tmp
+# MAGIC select * from table_stats
 
 # COMMAND ----------
 
@@ -208,8 +146,8 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC create database if not exists dataops
+#%sql
+#create database if not exists dataops
 
 # COMMAND ----------
 
@@ -218,18 +156,8 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC create table if not exists dataops.tbl_details as select * from table_stats
-
-# COMMAND ----------
-
 #%sql
-#drop table if exists dataops.tbl_file_details
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC create table if not exists dataops.tbl_file_details as select * from file_stats
+#create table if not exists dataops.tbl_details as select * from table_stats
 
 # COMMAND ----------
 
@@ -244,27 +172,16 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC -- If table already exists
-# MAGIC merge into dataops.tbl_file_details as t
-# MAGIC using 
-# MAGIC file_stats as s
-# MAGIC on t.path = s.path 
-# MAGIC when matched then update set *
-# MAGIC when not matched then insert *;
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ##### 5. Summarize Statistics
 
 # COMMAND ----------
 
-# DBTITLE 1,Top 5 Tables
+# DBTITLE 1,Top 10 Tables
 # MAGIC %sql
-# MAGIC -- Top 5 tables
+# MAGIC -- Top 10 tables
 # MAGIC select 
 # MAGIC dbname,table_name,sizeInGB,partitionFlag
 # MAGIC from dataops.tbl_details 
 # MAGIC order by sizeInGB desc
-# MAGIC limit 5
+# MAGIC limit 10

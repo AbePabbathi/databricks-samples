@@ -5,7 +5,7 @@
 # MAGIC 
 # MAGIC #### Scope
 # MAGIC This notebook analyzes a Delta lake table stored in a database.
-# MAGIC It scans the table and dbfs file system to gather important statistics to help you find ways to improve the performance of Delta lake table
+# MAGIC It scans the table and dbfs file system to gather important statistics to help you find ways to improve the performance of the Delta lake table
 # MAGIC 
 # MAGIC Here are the steps we execute
 # MAGIC * Read database name and table name entered by user at the top of the notebook
@@ -24,6 +24,7 @@
 # MAGIC - Table Size including all versions
 # MAGIC - Avg. File Size
 # MAGIC - Partition Skew
+# MAGIC - Opportunities for Vacuuming old files
 # MAGIC 
 # MAGIC #### Instructions
 # MAGIC 
@@ -87,7 +88,7 @@ tSchema = StructType([StructField("format", StringType())\
                       ,StructField("minReaderVersion", StringType())\
                       ,StructField("minWriterVersion", StringType())\
                       ,StructField("dbname", StringType())])
-if len(tables)>0:
+if len(tbl_details)>0:
   tbldetDF = spark.createDataFrame(tbl_details,schema=tSchema)
 else :
   tbldetDF = spark.createDataFrame(spark.sparkContext.emptyRDD(), tSchema)
@@ -133,13 +134,16 @@ def analyzeDir(parentDir,dbfsPath):
   #Get list of files which have some data in them
   while len(sourceFiles)>0:
     fileDetails = sourceFiles.pop()
-    if fileDetails.size>0:
+    # Ensure it's not a directory by checking size and the last character
+    if fileDetails.size>0 or fileDetails.name[-1:]!='/':
       fileDetailsList = list(fileDetails)
       fileDetailsList.append(dbfsPath)
       fileList.append(fileDetailsList)
     else:
       try:
+        print("processing subdir :"+fileDetails.path)
         subDirFiles = dbutils.fs.ls(fileDetails.path)
+        print("File count found :"+str(len(subDirFiles)))
         sourceFiles.extend(subDirFiles)
       except:
         badDirList.append(fileDetails.path) 
@@ -165,7 +169,7 @@ while len(tableLocations)>0:
 tSchema = StructType([StructField("path", StringType())\
                       ,StructField("name", StringType())\
                       ,StructField("size", LongType())\
-                      ,StructField("modificationTime", LongType())\
+                      #,StructField("modificationTime", LongType())\
                       ,StructField("tablePath", StringType())
                      ])
 if len(tableFiles)>0:
@@ -188,6 +192,22 @@ else:
 
 # COMMAND ----------
 
+#%sql
+#create table if not exists dataops.tbl_file_details as select * from file_stats
+
+# COMMAND ----------
+
+# %sql
+# -- If table already exists
+# merge into dataops.tbl_file_details as t
+# using 
+# file_stats as s
+# on t.path = s.path 
+# when matched then update set *
+# when not matched then insert *;
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ##### 4. Summarize Statistics
 
@@ -201,13 +221,6 @@ display(spark.sql("select round(count(*)/1000000,2) as RowCountInMM from "+dbNam
 # DBTITLE 1,Table Details
 # MAGIC %sql
 # MAGIC select * from table_stats
-
-# COMMAND ----------
-
-# DBTITLE 1,Approx. Partition Count
-res = spark.sql("select replace(replace(partitionColumns,'[',''),']','') as partitioncols from table_stats")
-if len(res.rdd.collect()[0][0])>0:
-  display(spark.sql("select count(distinct "+res.rdd.collect()[0][0]+") as partitions from (select * from "+dbName+"."+tableName+" limit 1000)"))
 
 # COMMAND ----------
 
@@ -232,6 +245,7 @@ if len(res.rdd.collect()[0][0])>0:
 # MAGIC from file_stats
 # MAGIC where partitionDir = 1 and deltaLogDir <> 1
 # MAGIC group by tablePath,subPath
+# MAGIC order by 3 desc
 
 # COMMAND ----------
 
@@ -247,3 +261,8 @@ if len(res.rdd.collect()[0][0])>0:
 # MAGIC (select tablePath,round(sum(size)/1024/1024/1024,3) sizeInGB,count(*) numFiles from file_stats group by tablePath) f
 # MAGIC where
 # MAGIC t.location = f.tablePath
+
+# COMMAND ----------
+
+#%sql
+#select tablePath,count(*) from dataops.tbl_file_details group by tablePath

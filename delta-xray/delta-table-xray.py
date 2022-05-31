@@ -4,7 +4,7 @@
 # MAGIC ### Delta Lake Table Profiler v0.1
 # MAGIC 
 # MAGIC #### Scope
-# MAGIC This notebook analyzes a Delta lake table stored in a database.
+# MAGIC This notebook analyzes a Delta lake table stored in a database. This notebook runs only on Clusters with DBR Runtime 10.4 or above.
 # MAGIC It scans the table and dbfs file system to gather important statistics to help you find ways to improve the performance of the Delta lake table
 # MAGIC 
 # MAGIC Here are the steps we execute
@@ -143,7 +143,7 @@ def analyzeDir(parentDir,dbfsPath):
       try:
         print("processing subdir :"+fileDetails.path)
         subDirFiles = dbutils.fs.ls(fileDetails.path)
-        print("File count found :"+str(len(subDirFiles)))
+        #print("File count found :"+str(len(subDirFiles)))
         sourceFiles.extend(subDirFiles)
       except:
         badDirList.append(fileDetails.path) 
@@ -169,7 +169,7 @@ while len(tableLocations)>0:
 tSchema = StructType([StructField("path", StringType())\
                       ,StructField("name", StringType())\
                       ,StructField("size", LongType())\
-                      #,StructField("modificationTime", LongType())\
+                      ,StructField("modificationTime", LongType())\
                       ,StructField("tablePath", StringType())
                      ])
 if len(tableFiles)>0:

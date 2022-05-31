@@ -26,7 +26,7 @@
 
 # Setup Notebook Parameters
 #dbutils.widgets.removeAll()
-#dbutils.widgets.text("catalogName", "hive_metastore","Catalog Name")
+dbutils.widgets.text("catalogName", "hive_metastore","Catalog Name")
 
 # COMMAND ----------
 
